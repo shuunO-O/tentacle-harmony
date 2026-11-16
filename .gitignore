@@ -1,0 +1,26 @@
+# Local SDK, signing and IDE configuration
+/build-profile.json5
+/local.properties
+/.idea/
+/.deveco/
+/.hvigor/
+/.cache/
+**/oh_modules/
+**/node_modules/
+**/build/
+.cxx/
+.clangd/
+**/.test/
+.appanalyzer/
+.env
+*.p12
+*.pfx
+*.p7b
+*.cer
+*.pem
+*.key
+*.jks
+*.hap
+*.hsp
+*.hqf
+*.app

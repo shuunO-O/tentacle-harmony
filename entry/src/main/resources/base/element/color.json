@@ -1,0 +1,96 @@
+{
+  "color": [
+    {
+      "name": "start_window_background",
+      "value": "#201B16"
+    },
+    {
+      "name": "tentacle_bg",
+      "value": "#201B16"
+    },
+    {
+      "name": "tentacle_bg_elevated",
+      "value": "#2B241C"
+    },
+    {
+      "name": "tentacle_bg_sidebar",
+      "value": "#191510"
+    },
+    {
+      "name": "tentacle_nav_text",
+      "value": "#B0A694"
+    },
+    {
+      "name": "tentacle_nav_muted",
+      "value": "#8E8778"
+    },
+    {
+      "name": "tentacle_nav_selected",
+      "value": "#38251B"
+    },
+    {
+      "name": "tentacle_bg_input",
+      "value": "#292219"
+    },
+    {
+      "name": "tentacle_bg_hover",
+      "value": "#332B21"
+    },
+    {
+      "name": "tentacle_border",
+      "value": "#3D342A"
+    },
+    {
+      "name": "tentacle_text",
+      "value": "#E9E2D7"
+    },
+    {
+      "name": "tentacle_text_dim",
+      "value": "#B9AE9F"
+    },
+    {
+      "name": "tentacle_text_faint",
+      "value": "#A59B8D"
+    },
+    {
+      "name": "tentacle_accent",
+      "value": "#D97757"
+    },
+    {
+      "name": "tentacle_accent_hover",
+      "value": "#E58E6E"
+    },
+    {
+      "name": "tentacle_user_bubble",
+      "value": "#3E3327"
+    },
+    {
+      "name": "tentacle_danger",
+      "value": "#CF6A5F"
+    },
+    {
+      "name": "tentacle_ok",
+      "value": "#7FA66A"
+    },
+    {
+      "name": "tentacle_bg_card",
+      "value": "#29241E"
+    },
+    {
+      "name": "tentacle_agent_bubble",
+      "value": "#2B241C"
+    },
+    {
+      "name": "tentacle_agent_border",
+      "value": "#332C23"
+    },
+    {
+      "name": "tentacle_border_strong",
+      "value": "#4A3F31"
+    },
+    {
+      "name": "tentacle_accent_soft",
+      "value": "#33D97757"
+    }
+  ]
+}
