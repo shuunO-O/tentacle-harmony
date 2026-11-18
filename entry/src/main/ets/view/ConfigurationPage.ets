@@ -1,6 +1,6 @@
 import { TentacleApi } from '../service/TentacleApi';
 import { ConfigSnapshot, ConfigField, ConfigValue, ConfigPreview, ConfigChange, ConfigBackup, ConfigEntity,
-  StructureOperation, ModelCatalog, CatalogModel, MigrationNeed, ToolSelection, displayValue, fieldValue, effectLabel } from '../model/Management';
+  StructureOperation, ModelCatalog, CatalogModel, ToolSelection, displayValue, fieldValue, effectLabel } from '../model/Management';
 import { ActionButton, AppCard, FeedbackBanner, SectionTitle, StatusPill } from '../components/UiKit';
 import { notifyToast } from '../model/UiToast';
 import {
@@ -49,8 +49,6 @@ export struct ConfigurationPage {
   @State createApiStyle: string = 'chat';
   @State createContextWindow: string = '131072';
   @State createVision: boolean = false;
-  @State unresolved: MigrationNeed[] = [];
-  @State hints: Record<string, string> = {};
   @State section: string = 'models';
   @State inspecting: boolean = false;
   @State maintenanceOpen: boolean = false;
@@ -91,9 +89,8 @@ export struct ConfigurationPage {
       if (seq !== this.generation || !this.visible || this.dirty() || this.preview !== null) { return; }
       this.data = data;
       if (!this.groups().includes(this.group)) {
-        const active = (data.config_version === 2 ? '角色' : '模型') + ' · ' + data.active_role;
+        const active = '角色 · ' + data.active_role;
         this.group = this.groups().includes(active) ? active : this.groups()[0] ?? '';
-        this.section = configurationSection(this.group);
         const role = data.entities.roles.find((e: ConfigEntity) => e.id === data.active_role);
         const model = data.entities.models.find((e: ConfigEntity) => e.id === role?.model);
         if (model !== undefined) { this.expandedModels = [model.id]; this.expandedProviders = [model.provider ?? '']; }
@@ -412,7 +409,6 @@ export struct ConfigurationPage {
       let result: ConfigPreview;
       if (this.previewKind === 'structure') { result = await api.structureConfiguration(revision, this.operations, true); }
       else if (this.previewKind === 'restore') { result = await api.restoreConfiguration(revision, this.backup, true); }
-      else if (this.previewKind === 'migrate') { result = await api.migrateConfiguration(revision, this.hints, true); }
       else { result = await api.saveConfiguration(revision, this.changes()); }
       this.preview = null;
       this.draft = {};
@@ -519,21 +515,6 @@ export struct ConfigurationPage {
     try {
       this.preview = await TentacleApi.getInstance().restoreConfiguration(this.data.revision, id, false);
       this.backup = id; this.previewKind = 'restore';
-    } catch (e) { this.setNotice((e as Error).message, 'danger'); }
-    finally { this.busy = false; }
-  }
-
-  private async migrate(): Promise<void> {
-    if (this.data === null || this.busy || this.dirty()) { return; }
-    this.busy = true;
-    try {
-      const result = await TentacleApi.getInstance().migrateConfiguration(this.data.revision, this.hints, false);
-      this.unresolved = result.unresolved ?? [];
-      if (!result.equivalent) {
-        this.setNotice('请明确旧配置接入类型；行为不一致时不能迁移 ' + (result.changed_roles ?? []).join('、'), 'danger');
-        return;
-      }
-      this.preview = result; this.previewKind = 'migrate';
     } catch (e) { this.setNotice((e as Error).message, 'danger'); }
     finally { this.busy = false; }
   }
@@ -757,15 +738,6 @@ export struct ConfigurationPage {
   @Builder
   EntityTree() {
     Column({ space: 12 }) {
-      if (this.data?.concept_migration_needed) {
-        AppCard() {
-          Row({ space: 10 }) {
-            Text('检测到旧版 JEV/模型格式，可升级为分层结构统一管理').fontSize(12).fontColor($r('app.color.tentacle_text_dim')).layoutWeight(1)
-            ActionButton({ label: '预览升级 v2', tone: 'primary', compact: true, isEnabled: !this.busy,
-              onTap: () => { this.migrate(); } })
-          }.width('100%')
-        }
-      }
       Row({ space: 8 }) {
         Text('连接 · 模型 · 角色').fontSize(14).fontWeight(FontWeight.Medium).fontColor($r('app.color.tentacle_text')).layoutWeight(1)
         ActionButton({ label: '+ 连接', tone: 'primary', compact: true, isEnabled: !this.busy,
@@ -933,7 +905,7 @@ export struct ConfigurationPage {
   @Builder
   Inspector() {
     Column({ space: 12 }) {
-      if (this.section === 'models' && this.data?.config_version === 2) {
+      if (this.section === 'models') {
         Row({ space: 8 }) {
           ActionButton({ label: '‹ 返回连接树', tone: 'ghost', compact: true, isEnabled: !this.busy,
             onTap: () => { this.inspecting = false; this.fieldSearch = ''; } })
@@ -1142,10 +1114,6 @@ export struct ConfigurationPage {
           onTap: () => { this.maintenanceOpen = false; } })
       }.width('100%')
 
-      if (this.data?.config_version !== 2 || this.data?.concept_migration_needed) {
-        this.LegacyMigration()
-      }
-
       AppCard() {
         Column({ space: 10 }) {
           SectionTitle({ title: '运行状态与重载维护' })
@@ -1201,25 +1169,6 @@ export struct ConfigurationPage {
         }.width('100%')
       }
     }.width('100%')
-  }
-
-  @Builder
-  LegacyMigration() {
-    AppCard() {
-      Column({ space: 10 }) {
-        SectionTitle({ title: '升级为分层模型配置（v2）' })
-        Text('将旧格式整理为「供应商连接 → 模型 → 角色」三层结构，先核对差异再保存。').fontSize(12).fontColor($r('app.color.tentacle_text_dim')).width('100%')
-        ForEach(this.unresolved, (need: MigrationNeed) => {
-          Text(need.role + '：' + need.reason).fontSize(12).fontColor($r('app.color.tentacle_text_dim'))
-          Select(this.options(this.providerTypes())).value(this.hints[need.role] ?? '')
-            .fontColor($r('app.color.tentacle_text')).backgroundColor($r('app.color.tentacle_bg_input')).width('100%')
-            .onSelect((i: number) => { this.hints[need.role] = this.providerTypes()[i]; this.preview = null; })
-        }, (need: MigrationNeed) => need.role)
-        ActionButton({ label: '生成迁移预览', tone: 'primary', compact: true,
-          isEnabled: !this.busy && !this.dirty(),
-          onTap: () => { this.migrate(); } })
-      }.width('100%')
-    }
   }
 
   @Builder
@@ -1324,10 +1273,7 @@ export struct ConfigurationPage {
           } else if (this.maintenanceOpen) {
             this.MaintenanceToolbox()
           } else if (this.section === 'models') {
-            if (this.data.config_version !== 2) {
-              this.LegacyMigration()
-              this.Inspector()
-            } else if (this.inspecting) { this.Inspector() } else { this.EntityTree() }
+            if (this.inspecting) { this.Inspector() } else { this.EntityTree() }
           } else {
             this.Inspector()
           }

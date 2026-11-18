@@ -1,4 +1,5 @@
 # Local SDK, signing and IDE configuration
+/AGENTS.md
 /build-profile.json5
 /local.properties
 /.idea/

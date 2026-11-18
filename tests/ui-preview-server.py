@@ -46,7 +46,7 @@ fields += [field("heartbeat.interval_minutes", "心跳间隔（分钟）", 30, "
            field("web.enabled", "启用网页工具", True, "公开网页工具", "boolean"),
            field("features.subagents", "启用子代理", True, "功能开关", "boolean"),
            field("service.port", "服务端口", 8080, "服务", "integer")]
-snapshot = dict(revision="a" * 64, config_version=2, fields=fields,
+snapshot = dict(revision="a" * 64, fields=fields,
                 entities=dict(providers=providers, models=models, roles=roles),
                 provider_types=dict(openai_compatible=dict(label="OpenAI 兼容", auth="api_key", protocols=["chat", "responses"], base_url="https://example.invalid/v1", api_style="chat")),
                 tools={r["id"]: ["file_read", "web_search", "schedule"] for r in roles},

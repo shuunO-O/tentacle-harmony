@@ -890,11 +890,6 @@ export class TentacleApi {
       JSON.stringify({ revision: revision, backup: backup, apply: apply }));
   }
 
-  migrateConfiguration(revision: string, hints: Record<string, string>, apply: boolean): Promise<ConfigPreview> {
-    return this.request<ConfigPreview>('/api/configuration/migrate', http.RequestMethod.POST,
-      JSON.stringify({ revision: revision, hints: hints, apply: apply }));
-  }
-
   discoverModels(revision: string, provider: string): Promise<ModelCatalog> {
     return this.request<ModelCatalog>('/api/configuration/discover-models', http.RequestMethod.POST,
       JSON.stringify({ revision: revision, provider: provider }));

@@ -126,7 +126,7 @@ module.exports = async ({ load, root, check, page, requests, terminal, json, set
 
   const field = (path, kind, value, extra = {}) => ({ path, kind, value, active: value, default: value, label: path, group: 'synthetic',
     choices: [], nullable: false, inheritable: false, protected: false, pending: false, source: 'file', effect: 'round', minimum: null, maximum: null, help: '', ...extra });
-  const snapshot = () => ({ revision: 'a'.repeat(64), config_version: 2,
+  const snapshot = () => ({ revision: 'a'.repeat(64),
     fields: [field('heartbeat.interval_minutes','number',30,{ minimum:0.1, maximum:10080 }), field('roles.chat.model','string','m'),
       field('models.m.defaults.temperature','number',0.7), field('roles.chat.overrides.temperature','number',1,{ inheritable: true, default:0.7 })],
     entities: { providers: [{ id:'p',label:'P',type:'openai_compatible',references:{models:['m'],roles:['chat'],uploads:[],balance:false} }],
@@ -200,11 +200,16 @@ module.exports = async ({ load, root, check, page, requests, terminal, json, set
     assert.equal(JSON.parse(requests[1].options.extraData).apply,false);
     assert.equal(JSON.parse(requests[1].options.extraData).backup,'synthetic-backup'); p.aboutToDisappear();
   });
-  await check('migration with unresolved connection types cannot be saved', async () => {
-    const p=configPage(); p.data.config_version=1; requests.length=0;
-    setRespond(() => ({revision:'a'.repeat(64),equivalent:false,unresolved:[{role:'chat',reason:'choose explicit provider'}],changes:[]}));
-    await p.migrate(); assert.equal(p.preview,null); assert.equal(p.unresolved.length,1); await p.save();
-    assert.equal(requests.length,1); p.aboutToDisappear();
+  await check('configuration load handles snapshots without config_version as hierarchical 3-tier layout', async () => {
+    const p=new ConfigurationPage(); p.visible=true;
+    const snap=snapshot(); snap.fields[0].group='心跳'; snap.fields[1].group='角色 · chat';
+    setRespond(() => snap);
+    await p.load();
+    assert.equal(p.section, 'models');
+    assert.equal(p.group, '角色 · chat');
+    assert.deepEqual(json(p.expandedModels), ['m']);
+    assert.deepEqual(json(p.expandedProviders), ['p']);
+    p.aboutToDisappear();
   });
   await check('catalog imports only selected new models and rejects a changed configuration revision', async () => {
     const p=configPage(); requests.length=0;

@@ -42,7 +42,6 @@ export interface RestartState { available: boolean; state: string; }
 export interface ActiveModel { name: string; provider_id: string | null; model_id: string | null; api_style: string; }
 export interface ConfigSnapshot {
   revision: string;
-  config_version: number;
   fields: ConfigField[];
   history: ConfigBackup[];
   entities: ConfigEntities;
@@ -50,11 +49,10 @@ export interface ConfigSnapshot {
   tools: Record<string, string[]>;
   connection_status: Record<string, CredentialState>;
   active_role: string;
-  active_model: ActiveModel;
+  active_model: ActiveModel | null;
   applying: boolean;
   error: string | null;
   restart_required: boolean;
-  concept_migration_needed?: boolean;
   restart: RestartState;
 }
 export interface MaintenanceVersion {
@@ -100,15 +98,10 @@ export interface DedupAuditResult {
   total?: number;
 }
 export interface ConfigChange { path: string; label: string; before: ConfigValue; after: ConfigValue; effect: string; impact?: string[]; }
-export interface MigrationNeed { role: string; reason: string; }
 export interface ConfigPreview {
   revision: string;
   changes: ConfigChange[];
   status?: ConfigSnapshot;
-  equivalent?: boolean;
-  unresolved?: MigrationNeed[];
-  changed_roles?: string[];
-  warnings?: string[];
 }
 export interface StructureOperation { op: string; kind: string; id: string; value?: Record<string, ConfigValue>; }
 export interface CatalogModel { import_id: string; name: string; context_window?: number; configured?: boolean; }

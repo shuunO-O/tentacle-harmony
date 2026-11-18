@@ -362,7 +362,6 @@ module.exports = async ({ load, root, check, page, requests, json, settle, Tenta
     p.visible = true;
     const baseSnapshot = {
       revision: 'c'.repeat(64),
-      config_version: 2,
       fields: [
         { path: 'web_tools.api_key_env', label: '网页工具密钥', kind: 'env', value: 'PARALLEL_API_KEY', active: 'PARALLEL_API_KEY',
           default: '', group: '公开网页工具', choices: [], nullable: false, inheritable: false, protected: false, pending: false,

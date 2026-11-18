@@ -7,7 +7,7 @@ Tentacle 的鸿蒙客户端（ArkTS / Stage 模型）。配套后端仓库：[sh
 - **实时对话与中断恢复**：支持 Markdown 流式渲染、思考与工具调用折叠、输入草稿持久化、停止当前回合，以及通过 `/api/chat/sync` 在切后台或断线重连后恢复在途回合；所有输入统一发送到后端，命令候选由后端动态下发。
 - **文件与多媒体**：支持图片、普通文件上传与音视频播放；支持直接引用“服务器已有文件”，并通过 SHA-256 指纹避免重复上传；图谱快照、上传映射与图片预览支持本地缓存（`filesDir/tentacle-cache-v1`）与手动清理。
 - **知识图谱**：原生 Canvas 半圆关系轮盘，支持旋转浏览邻居、局部关系边合并展示、全量节点搜索与独立“节点详情”页签，以及可静音的本地 SoundPool 刻度音效。
-- **系统与扩展管理**：统计与多供应商余额筛选、字段驱动的应用配置（含 `string_list` 与 `.env` 凭据安全录入）、插件与 MCP 服务管理、设备鉴权、文件管理、概念去重与只读子代理任务。功能对照见 [Web 适配说明](docs/WEB_PARITY_2026-10-22.md)。
+- **系统与扩展管理**：统计与多供应商余额筛选、字段驱动的三层结构应用配置（含 `string_list` 与 `.env` 凭据安全录入）、插件与 MCP 服务管理、设备鉴权、文件管理、概念去重与只读子代理任务。架构与协议对照见 [架构与协议说明](docs/ARCHITECTURE.md)。
 - **手机能力（可选）**：支持系统代理提醒闹钟与回复实况窗调测（需后端启用内置 `harmony` 插件及对应的华为开放能力/签名配置）。
 
 ---
@@ -107,21 +107,34 @@ node tests/check-chat.cjs
 ```
 
 - 默认自动查找 DevEco Studio 随附的 TypeScript 编译器；若安装路径不同，可通过环境变量 `TYPESCRIPT_MODULE` 指定。
-- 若使用 `devecocli` 进行构建与设备调试，可执行 `devecocli build`（AI Agent 协作开发前需先安装 DevEco CLI，详见[华为开发者 DevEco CLI 指南](https://developer.huawei.com/consumer/cn/doc/guidebook/aitech2026-3-1-0000002686528855)）。
+- 若使用 `devecocli` 进行 lint 与构建校验，可执行 `devecocli check lint` 与 `devecocli build`。
+
+---
+
+## 协作与 Agent 开发约定
+
+本仓库为独立的鸿蒙客户端仓库，配套后端在 [shuunO-O/tentacle](https://github.com/shuunO-O/tentacle)。参与协作的开发者与 AI Agent 请遵循以下约定：
+
+- **构建与设备工具**：鸿蒙构建、lint 检查与设备调试统一使用 `devecocli`（若环境未安装，需先按[华为开发者 DevEco CLI 指南](https://developer.huawei.com/consumer/cn/doc/guidebook/aitech2026-3-1-0000002686528855)下载安装）；每次修改后运行 `node tests/check-chat.cjs` 进行逻辑检查。
+- **后端主导的协议边界**：命令识别属于后端，客户端从 `/api/chat/commands` 读取候选并统一调用 `/api/chat/send`，不得在客户端恢复本地命令清单。配置模型采用三层结构（`providers` → `models` → `roles`），不再兼容已废弃的 v1 配置或迁移接口。
+- **核心交互不变量**：保留输入草稿、历史竞争保护、服务端分段顺序和手动滚动阅读位置（详情见 [架构与协议说明](docs/ARCHITECTURE.md)）。
+- **敏感与本机文件保护**：本机 `build-profile.json5`、签名材料、依赖缓存和构建产物均已忽略，不得提交。
+- **测试数据边界**：所有测试均须使用虚构数据和模拟网络；不得读取手机或后端的私人消息。
 
 ---
 
 ## 后端接口基线
 
-当前客户端适配 `tentacle` 主分支提交 `be39c3b` 协议：
+当前客户端与 [tentacle](https://github.com/shuunO-O/tentacle) 主分支当前协议对齐：
 
 - `POST /api/chat/send`：统一发送聊天与命令（`platform: "harmony"`，含 `request_id`、`files` 与可选 `client_meta.live_view`）。
 - `GET /api/chat/commands`：获取输入框命令候选。
 - `POST /api/chat/stop`：携带当前回合 `round_id` / `request_id` 请求停止。
 - `GET /api/chat/sync` / `GET /api/chat/history`：恢复在途回合快照与按消息顺序分页加载历史（旧后端不支持 `sync` 时自动降级）。
-- `/ws/chat`：实时事件流与 `phone_action` 同步。
+- `/ws/chat`：实时事件流与 `phone_action`、`maintenance.updated`、`status.snapshot`、`dedup.progress`、`subagent.updated` 等事件推送。
+- `GET/PUT /api/configuration` 及 `/preview`、`/structure`、`/restore`、`/discover-models`、`/environment`、`/apply`、`/restart`：三层模型配置与热重载/重启管理。
 - `/api/plugins/*`、`/api/plugins/ext/harmony/*`：插件、MCP、`.env` 凭据及鸿蒙扩展能力接口。
-- `/api/usage`、`/api/balance`、`/api/configuration` 等管理页 REST API。
+- `/api/maintenance`、`/api/usage`、`/api/balance`、`/api/memory/dedup*`、`/api/subagents*`、`/api/files*`、`/api/admin/*` 等管理页 REST API。
 
 ---
 
