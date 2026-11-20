@@ -23,6 +23,7 @@ import { ConfigurationPage } from '../view/ConfigurationPage';
 import { PluginsPage } from '../view/PluginsPage';
 import { DedupPage } from '../view/DedupPage';
 import { SubagentsPage } from '../view/SubagentsPage';
+import { DshListPage } from '../view/DshListPage';
 import { enterFade } from '../components/UiKit';
 
 interface NavItem {
@@ -49,6 +50,7 @@ struct Index {
   @StorageLink('dedupRunning') dedupRunning: boolean = false;
   @StorageLink('updateAvailable') updateAvailable: boolean = false;
   @StorageLink('pendingChatPrompt') @Watch('applyPendingPrompt') pendingChatPrompt: string = '';
+  @StorageLink('pendingSwitchView') @Watch('applySwitchView') pendingSwitchView: string = '';
   @StorageLink('appToastSeq') @Watch('showToastCapsule') appToastSeq: number = 0;
   @StorageProp('appToastText') appToastText: string = '';
   @StorageProp('appToastTone') appToastTone: string = 'info';
@@ -58,6 +60,7 @@ struct Index {
   private readonly navItems: NavItem[] = [
     { key: 'chat', label: '聊天', group: '对话', icon: $r('app.media.nav_chat'), selectedIcon: $r('app.media.nav_chat_selected') },
     { key: 'subagents', label: '子代理任务', group: '对话', icon: $r('app.media.nav_subagents'), selectedIcon: $r('app.media.nav_subagents_selected') },
+    { key: 'dsh', label: 'DSH 编码台', group: '对话', icon: $r('app.media.nav_dsh'), selectedIcon: $r('app.media.nav_dsh_selected') },
     { key: 'admin', label: '记忆库', group: '记忆', icon: $r('app.media.nav_memory'), selectedIcon: $r('app.media.nav_memory_selected') },
     { key: 'graph', label: '图谱', group: '记忆', icon: $r('app.media.nav_graph'), selectedIcon: $r('app.media.nav_graph_selected') },
     { key: 'dedup', label: '概念去重', group: '记忆', icon: $r('app.media.nav_dedup'), selectedIcon: $r('app.media.nav_dedup_selected') },
@@ -159,6 +162,14 @@ struct Index {
   private applyPendingPrompt(): void {
     if (this.pendingChatPrompt.length > 0) {
       this.currentView = 'chat';
+    }
+  }
+
+  private applySwitchView(): void {
+    if (this.pendingSwitchView.length > 0) {
+      const target = this.pendingSwitchView;
+      this.pendingSwitchView = '';
+      this.currentView = target;
     }
   }
 
@@ -375,6 +386,8 @@ struct Index {
       DedupPage()
     } else if (this.currentView === 'subagents') {
       SubagentsPage()
+    } else if (this.currentView === 'dsh') {
+      DshListPage()
     } else if (this.currentView === 'status') {
       Column() {
         StatusPage()

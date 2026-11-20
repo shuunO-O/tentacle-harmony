@@ -1,7 +1,8 @@
 import { TentacleApi } from '../service/TentacleApi';
 import { WsEvent } from '../model/Types';
-import { SubagentTask, SubagentTurn, SubagentWsEvent, taskStatus } from '../model/Management';
+import { DshSummarySession, SubagentTask, SubagentTurn, SubagentWsEvent, taskStatus } from '../model/Management';
 import { ActionButton, AppCard, FeedbackBanner, SectionTitle, StatusPill } from '../components/UiKit';
+import { notifyToast } from '../model/UiToast';
 
 @Component
 export struct SubagentsPage {
@@ -10,8 +11,13 @@ export struct SubagentsPage {
   @State turns: SubagentTurn[] = [];
   @State before: number | null = null;
   @State agentsEnabled: boolean = true;
+  @State codingEnabled: boolean = false;
   @State message: string = '';
   @State loading: boolean = false;
+  @State dshSheetOpen: boolean = false;
+  @State loadingDsh: boolean = false;
+  @State dshSessions: DshSummarySession[] = [];
+  @State attachingId: string = '';
   private visible: boolean = false;
   private timer: number = -1;
   private generation: number = 0;
@@ -20,6 +26,7 @@ export struct SubagentsPage {
     if (!this.visible || evt.type !== 'subagent.updated') { return; }
     const data = evt.data as object as SubagentWsEvent;
     if (data.enabled !== undefined) { this.agentsEnabled = data.enabled; }
+    if (typeof data.coding_enabled === 'boolean') { this.codingEnabled = data.coding_enabled; }
     if (Array.isArray(data.tasks)) {
       this.tasks = data.tasks;
     } else {
@@ -49,6 +56,7 @@ export struct SubagentsPage {
       const result = await TentacleApi.getInstance().getSubagents();
       if (seq !== this.generation || !this.visible) { return; }
       this.tasks = result.tasks; this.agentsEnabled = result.enabled;
+      if (typeof result.coding_enabled === 'boolean') { this.codingEnabled = result.coding_enabled; }
       const activeCount = result.tasks.filter((t: SubagentTask) => t.status === 'running' || t.status === 'queued').length;
       AppStorage.setOrCreate('runningSubagents', activeCount);
       this.message = result.execution_blocked ? '执行环境暂不可用，操作由主代理处理' : result.has_more ? '显示最近 20 个任务' : '';
@@ -68,6 +76,57 @@ export struct SubagentsPage {
 
   private askInChat(task: SubagentTask): void {
     AppStorage.setOrCreate('pendingChatPrompt', '请检查子任务 ' + task.id + '（' + task.objective + '）的当前进展。');
+  }
+
+  private openDshList(): void {
+    AppStorage.setOrCreate('pendingSwitchView', 'dsh');
+  }
+
+  private openDshSession(sessionId: string): void {
+    if (sessionId.length === 0) {
+      return;
+    }
+    this.getUIContext().getRouter().pushUrl({
+      url: 'pages/DshSessionPage',
+      params: { sessionId: sessionId }
+    }).catch((err: Error) => {
+      notifyToast('打开 DSH 会话失败：' + err.message, 'danger');
+    });
+  }
+
+  private dshSessionIdOf(s: DshSummarySession): string {
+    return s.session_id || s.sessionId || s.id || '';
+  }
+
+  private async openAttachSheet(): Promise<void> {
+    this.dshSheetOpen = true;
+    this.loadingDsh = true;
+    try {
+      const res = await TentacleApi.getInstance().getDshSessions();
+      this.dshSessions = res.sessions ?? [];
+    } catch (e) {
+      notifyToast('读取 DSH 会话失败：' + (e as Error).message, 'danger');
+      this.dshSessions = [];
+    } finally {
+      this.loadingDsh = false;
+    }
+  }
+
+  private async handleAttach(sessionId: string): Promise<void> {
+    if (sessionId.length === 0 || this.attachingId.length > 0) {
+      return;
+    }
+    this.attachingId = sessionId;
+    try {
+      await TentacleApi.getInstance().attachDshSession(sessionId);
+      this.dshSheetOpen = false;
+      notifyToast('已接管至子代理任务', 'ok');
+      await this.refresh();
+    } catch (e) {
+      notifyToast('接管失败：' + (e as Error).message, 'danger');
+    } finally {
+      this.attachingId = '';
+    }
   }
 
   private statusTone(status: string): string {
@@ -93,6 +152,89 @@ export struct SubagentsPage {
     finally { if (seq === this.detailSeq) { this.loading = false; } }
   }
 
+  @Builder
+  DshAttachSheetBuilder() {
+    Column({ space: 12 }) {
+      Row() {
+        Column({ space: 2 }) {
+          Text('DSH 编码工作区会话')
+            .fontSize(17)
+            .fontWeight(FontWeight.Medium)
+            .fontColor($r('app.color.tentacle_text'))
+          Text('选择历史或运行中的 DSH 会话接管至子代理任务')
+            .fontSize(12)
+            .fontColor($r('app.color.tentacle_text_faint'))
+        }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+
+        Text('关闭')
+          .fontSize(13)
+          .fontColor($r('app.color.tentacle_text_dim'))
+          .padding(8)
+          .onClick(() => {
+            this.dshSheetOpen = false;
+          })
+      }.width('100%')
+
+      Scroll() {
+        Column({ space: 8 }) {
+          if (this.loadingDsh) {
+            Text('正在查询 DSH 会话…').fontSize(13).fontColor($r('app.color.tentacle_text_faint')).padding(24)
+          } else if (this.dshSessions.length === 0) {
+            Text('暂无可接管的 DSH 会话').fontSize(13).fontColor($r('app.color.tentacle_text_faint')).padding(24)
+          } else {
+            ForEach(this.dshSessions, (s: DshSummarySession) => {
+              Row({ space: 10 }) {
+                Column({ space: 3 }) {
+                  Text(s.title && s.title.length > 0 ? s.title : this.dshSessionIdOf(s))
+                    .fontSize(13.5)
+                    .fontWeight(FontWeight.Medium)
+                    .fontColor($r('app.color.tentacle_text'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                  Text(this.dshSessionIdOf(s) + ((s.cwd || s.workspace) ? (' · ' + (s.cwd || s.workspace)) : ''))
+                    .fontSize(11)
+                    .fontFamily('monospace')
+                    .fontColor($r('app.color.tentacle_text_faint'))
+                    .maxLines(1)
+                    .textOverflow({ overflow: TextOverflow.Ellipsis })
+                }.layoutWeight(1).alignItems(HorizontalAlign.Start)
+
+                ActionButton({
+                  label: '打开',
+                  tone: 'ghost',
+                  compact: true,
+                  onTap: () => {
+                    const sid = this.dshSessionIdOf(s);
+                    this.dshSheetOpen = false;
+                    this.openDshSession(sid);
+                  }
+                })
+                ActionButton({
+                  label: this.attachingId === this.dshSessionIdOf(s) ? '接管中…' : '接管',
+                  tone: 'primary',
+                  compact: true,
+                  isEnabled: this.attachingId.length === 0,
+                  onTap: () => {
+                    this.handleAttach(this.dshSessionIdOf(s));
+                  }
+                })
+              }
+              .width('100%')
+              .padding(10)
+              .borderRadius(12)
+              .backgroundColor($r('app.color.tentacle_bg_elevated'))
+              .border({ width: 0.5, color: $r('app.color.tentacle_border') })
+            }, (s: DshSummarySession) => this.dshSessionIdOf(s))
+          }
+        }.width('100%')
+      }.width('100%').layoutWeight(1).scrollBar(BarState.Off)
+    }
+    .width('100%')
+    .height('100%')
+    .padding({ left: 18, right: 18, top: 10, bottom: 20 })
+    .backgroundColor($r('app.color.tentacle_bg_card'))
+  }
+
   build() {
     Column() {
       Row({ space: 8 }) {
@@ -107,6 +249,20 @@ export struct SubagentsPage {
           StatusPill({ label: this.agentsEnabled ? '实时追踪已启用' : '未启用', tone: this.agentsEnabled ? 'ok' : 'default' })
         }
         Blank()
+        ActionButton({
+          label: 'DSH 编码台 ›',
+          tone: 'accent',
+          compact: true,
+          onTap: () => { this.openDshList(); }
+        })
+        if (this.codingEnabled && this.selected === null) {
+          ActionButton({
+            label: '接管 DSH',
+            tone: 'secondary',
+            compact: true,
+            onTap: () => { this.openAttachSheet(); }
+          })
+        }
         ActionButton({
           label: '刷新',
           tone: 'secondary',
@@ -146,9 +302,17 @@ export struct SubagentsPage {
                       compact: true,
                       onTap: () => { this.open(task); }
                     })
+                    if (task.dsh_session_id && task.dsh_session_id.length > 0) {
+                      ActionButton({
+                        label: '进入 DSH ›',
+                        tone: 'accent',
+                        compact: true,
+                        onTap: () => { this.openDshSession(task.dsh_session_id ?? ''); }
+                      })
+                    }
                     ActionButton({
                       label: '在对话中询问',
-                      tone: 'accent',
+                      tone: 'ghost',
                       compact: true,
                       onTap: () => { this.askInChat(task); }
                     })
@@ -165,6 +329,14 @@ export struct SubagentsPage {
                 Row({ space: 8 }) {
                   StatusPill({ label: taskStatus(this.selected.status), tone: this.statusTone(this.selected.status) })
                   Blank()
+                  if (this.selected.dsh_session_id && this.selected.dsh_session_id.length > 0) {
+                    ActionButton({
+                      label: '打开 DSH ›',
+                      tone: 'primary',
+                      compact: true,
+                      onTap: () => { this.openDshSession(this.selected?.dsh_session_id ?? ''); }
+                    })
+                  }
                   ActionButton({
                     label: '在对话中询问',
                     tone: 'accent',
@@ -222,5 +394,10 @@ export struct SubagentsPage {
         }.width('100%').padding({ left: 14, right: 14, top: 2, bottom: 20 })
       }.width('100%').layoutWeight(1).scrollBar(BarState.Off)
     }.width('100%').height('100%').backgroundColor($r('app.color.tentacle_bg'))
+    .bindSheet($$this.dshSheetOpen, this.DshAttachSheetBuilder(), {
+      height: SheetSize.MEDIUM,
+      dragBar: true,
+      backgroundColor: $r('app.color.tentacle_bg_card')
+    })
   }
 }

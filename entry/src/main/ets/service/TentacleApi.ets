@@ -50,7 +50,7 @@ import { CommandCatalog } from '../model/ChatCommands';
 import { PhoneRegistration, PhoneRegistrationResult, PhoneLiveMeta, PhoneState } from '../model/PhoneProtocol';
 import { ConfigSnapshot, ConfigPreview, ConfigValue, ConfigEnvResult, StructureOperation, ModelCatalog, RestartState,
   DeviceInfo, SelfBackupsResult, SubagentList, SubagentDetail, DedupStatus, DedupAuditResult,
-  MaintenanceStatus, MaintenanceOperation } from '../model/Management';
+  MaintenanceStatus, MaintenanceOperation, DshSessionsResult, DshAttachResult } from '../model/Management';
 import { McpServerConfig, PluginDecisionPayload, PluginEnvWriteResult, PluginsSnapshot } from '../model/Plugins';
 
 const PREFS_NAME = 'tentacle_app';
@@ -58,8 +58,10 @@ const KEY_SERVER_URL = 'server_url';
 const KEY_TOKEN = 'token';
 const KEY_DEVICE_COOKIE = 'device_cookie';
 const DEVICE_COOKIE_NAME = 'tentacle_device';
+const CODING_COOKIE_NAME = 'tentacle_coding';
 
 export interface FilesResult { files: FileRecord[]; }
+interface DshAccessResult { url: string; }
 interface SavedGraph { summary: GraphSummary; graph: GraphData; updatedAt: number; }
 interface SavedUpload { key: string; file: FileRecord; }
 
@@ -73,6 +75,7 @@ export class TentacleApi {
   private serverUrl: string = '';
   private token: string = '';
   private deviceCookie: string = '';
+  private codingCookie: string = '';
   private phoneDeviceId: string = '';
   private phoneDeviceSecret: string = '';
   private phoneResetListener: (() => void) | null = null;
@@ -110,6 +113,7 @@ export class TentacleApi {
     this.uploaded.clear(); this.uploadPending.clear();
     this.graphSnapshot = null; this.graphPending = null;
     this.graphDiskLoaded = false; this.graphDiskPending = null; this.uploadDiskLoaded = false;
+    this.codingCookie = '';
     this.invalidateGraph();
   }
 
@@ -535,27 +539,71 @@ export class TentacleApi {
    * 兼容两种，属性（HttpOnly/Secure/SameSite）对原生客户端无意义，直接取 token。
    */
   private extractDeviceCookie(cookieHeader: string): string {
+    return this.extractNamedCookie(cookieHeader, DEVICE_COOKIE_NAME);
+  }
+
+  private extractNamedCookie(cookieHeader: string, cookieName: string): string {
     if (cookieHeader.length === 0) {
       return '';
     }
-    const tabParts = cookieHeader.split('\t');
-    if (tabParts.length >= 2) {
-      const nameIdx = tabParts.length - 2;
-      if (tabParts[nameIdx] === DEVICE_COOKIE_NAME) {
-        return tabParts[tabParts.length - 1].trim();
+    const lines = cookieHeader.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (line.length === 0) {
+        continue;
+      }
+      const tabParts = line.split('\t');
+      if (tabParts.length >= 2) {
+        const nameIdx = tabParts.length - 2;
+        if (tabParts[nameIdx] === cookieName) {
+          return tabParts[tabParts.length - 1].trim();
+        }
+      }
+      const prefix = cookieName + '=';
+      const start = line.indexOf(prefix);
+      if (start === 0 || (start > 0 && (line.charAt(start - 1) === ';' || line.charAt(start - 1) === ' '))) {
+        let value = line.substring(start + prefix.length);
+        const semi = value.indexOf(';');
+        if (semi >= 0) {
+          value = value.substring(0, semi);
+        }
+        if (value.trim().length > 0) {
+          return value.trim();
+        }
       }
     }
-    const prefix = DEVICE_COOKIE_NAME + '=';
-    const start = cookieHeader.indexOf(prefix);
-    if (start < 0) {
+    return '';
+  }
+
+  private extractCookieFromHeader(respHeader: Object | undefined, cookieName: string): string {
+    if (respHeader === undefined || respHeader === null) {
       return '';
     }
-    let value = cookieHeader.substring(start + prefix.length);
-    const semi = value.indexOf(';');
-    if (semi >= 0) {
-      value = value.substring(0, semi);
+    const rec = respHeader as Record<string, Object>;
+    const keys = Object.keys(rec);
+    for (let i = 0; i < keys.length; i++) {
+      if (keys[i].toLowerCase() !== 'set-cookie') {
+        continue;
+      }
+      const raw: Object = rec[keys[i]];
+      if (typeof raw === 'string') {
+        const hit = this.extractNamedCookie(raw as string, cookieName);
+        if (hit.length > 0) {
+          return hit;
+        }
+      } else if (Array.isArray(raw)) {
+        const list = raw as Object[];
+        for (let j = 0; j < list.length; j++) {
+          if (typeof list[j] === 'string') {
+            const hit = this.extractNamedCookie(list[j] as string, cookieName);
+            if (hit.length > 0) {
+              return hit;
+            }
+          }
+        }
+      }
     }
-    return value.trim();
+    return '';
   }
 
   // ---------- 业务 REST ----------
@@ -1019,6 +1067,141 @@ export class TentacleApi {
   getSubagent(id: string, before: number | null = null): Promise<SubagentDetail> {
     return this.request<SubagentDetail>('/api/subagents/' + encodeURIComponent(id) +
       (before === null ? '' : '?before=' + before.toString()), http.RequestMethod.GET, '', 10000);
+  }
+
+  getDshSessions(): Promise<DshSessionsResult> {
+    return this.request<DshSessionsResult>('/api/subagents/dsh/sessions', http.RequestMethod.GET, '', 15000);
+  }
+
+  attachDshSession(sessionId: string): Promise<DshAttachResult> {
+    return this.request<DshAttachResult>('/api/subagents/dsh/attach', http.RequestMethod.POST,
+      JSON.stringify({ session_id: sessionId }), 20000);
+  }
+
+  hasCodingCookie(): boolean {
+    return this.codingCookie.length > 0;
+  }
+
+  clearCodingCookie(): void {
+    this.codingCookie = '';
+  }
+
+  getCodingCookieHeader(): string {
+    const parts: string[] = [];
+    if (this.deviceCookie.length > 0) {
+      parts.push(DEVICE_COOKIE_NAME + '=' + this.deviceCookie);
+    }
+    if (this.codingCookie.length > 0) {
+      parts.push(CODING_COOKIE_NAME + '=' + this.codingCookie);
+    }
+    return parts.join('; ');
+  }
+
+  private originOfUrl(url: string): string {
+    const schemeEnd = url.indexOf('://');
+    if (schemeEnd < 0) {
+      return url;
+    }
+    const slash = url.indexOf('/', schemeEnd + 3);
+    return slash >= 0 ? url.substring(0, slash) : url;
+  }
+
+  buildCodingHeaders(includeOrigin: boolean, contentType: string = '', asciiBodyLen: number = -1): object {
+    const pairs: string[][] = [['Accept', 'application/json, text/plain, */*']];
+    if (contentType.length > 0) {
+      pairs.push(['Content-Type', contentType]);
+    }
+    if (asciiBodyLen >= 0) {
+      pairs.push(['Content-Length', asciiBodyLen.toString()]);
+    }
+    if (this.phoneDeviceId.length > 0 && this.phoneDeviceSecret.length > 0) {
+      pairs.push(['X-Tentacle-Device', this.phoneDeviceId]);
+      pairs.push(['X-Tentacle-Device-Secret', this.phoneDeviceSecret]);
+    }
+    const cookieHeader = this.getCodingCookieHeader();
+    if (cookieHeader.length > 0) {
+      pairs.push(['Cookie', cookieHeader]);
+    }
+    if (includeOrigin && this.serverUrl.length > 0) {
+      pairs.push(['Origin', this.originOfUrl(this.serverUrl)]);
+    }
+    return this.buildHeaderRaw(pairs);
+  }
+
+  authorizeDsh(): Promise<string> {
+    return new Promise<string>((resolve, reject) => {
+      if (this.serverUrl.length === 0) {
+        reject(new Error('[DSH授权] 尚未连接 Tentacle 服务器'));
+        return;
+      }
+      const pairs: string[][] = [['Content-Type', 'application/json']];
+      if (this.phoneDeviceId.length > 0 && this.phoneDeviceSecret.length > 0) {
+        pairs.push(['X-Tentacle-Device', this.phoneDeviceId]);
+        pairs.push(['X-Tentacle-Device-Secret', this.phoneDeviceSecret]);
+      }
+      if (this.token.length > 0) {
+        pairs.push(['Authorization', 'Bearer ' + this.token]);
+      }
+      if (this.deviceCookie.length > 0) {
+        pairs.push(['Cookie', DEVICE_COOKIE_NAME + '=' + this.deviceCookie]);
+      }
+      pairs.push(['Origin', this.originOfUrl(this.serverUrl)]);
+
+      const req = http.createHttp();
+      try {
+        req.request(this.serverUrl + '/api/subagents/dsh/access', {
+          method: http.RequestMethod.POST,
+          header: this.buildHeaderRaw(pairs),
+          extraData: '{}',
+          usingCache: false,
+          expectDataType: http.HttpDataType.STRING,
+          connectTimeout: 10000,
+          readTimeout: 55000,
+        }, (err: BusinessError, data: http.HttpResponse) => {
+          req.destroy();
+          if (err) {
+            reject(new Error('[DSH授权 code=' + (err.code ?? 0).toString() + '] ' + err.message));
+            return;
+          }
+          const code: number = data.responseCode;
+          const text: string = String(data.result ?? '');
+          if (code === 401) {
+            this.notifyWs({ type: 'unauthorized', data: {} });
+            reject(new UnauthorizedError());
+            return;
+          }
+          if (code >= 200 && code < 300) {
+            let parsedCookie = this.extractNamedCookie(data.cookies ?? '', CODING_COOKIE_NAME);
+            if (parsedCookie.length === 0) {
+              parsedCookie = this.extractCookieFromHeader(data.header as Object, CODING_COOKIE_NAME);
+            }
+            if (parsedCookie.length > 0) {
+              this.codingCookie = parsedCookie;
+            } else if (this.token.length > 0) {
+              this.codingCookie = this.token;
+            }
+            try {
+              const parsed = JSON.parse(text) as DshAccessResult;
+              resolve(parsed.url || '/coding/');
+            } catch (e) {
+              resolve('/coding/');
+            }
+            return;
+          }
+          try {
+            const detail = JSON.parse(text) as ApiErrorDetail;
+            const msg = typeof detail.detail === 'string' && detail.detail.length > 0 ? detail.detail : 'HTTP ' + code.toString();
+            reject(new ApiFailure(msg, detail.round, code));
+          } catch (e) {
+            reject(new ApiFailure('HTTP ' + code.toString(), undefined, code));
+          }
+        });
+      } catch (syncErr) {
+        req.destroy();
+        const bErr = syncErr as BusinessError;
+        reject(new Error('[DSH授权异常 code=' + (bErr.code ?? 0).toString() + '] ' + (bErr.message ?? String(syncErr))));
+      }
+    });
   }
 
   getDedup(state: string, offset: number): Promise<DedupStatus> {

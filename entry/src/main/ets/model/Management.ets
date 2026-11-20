@@ -123,6 +123,15 @@ export interface SubagentTask {
   id: string; objective: string; status: string; progress: string; result: string;
   error: string | null; delivery: string; background: string; archived: boolean;
   created_at: number; updated_at: number; finished_at: number | null; cleanup_error?: string;
+  dsh_session_id?: string | null; workspace?: string | null;
+}
+export interface DshSummarySession {
+  session_id?: string; sessionId?: string; id?: string;
+  title?: string | null; cwd?: string; workspace?: string;
+}
+export interface DshSessionsResult { sessions: DshSummarySession[]; }
+export interface DshAttachResult {
+  task_id: string; status: string; dsh_session_id?: string | null; workspace?: string | null;
 }
 export interface SubagentList { enabled: boolean; tasks: SubagentTask[]; has_more?: boolean; execution_blocked?: boolean; coding_enabled?: boolean; }
 export interface SubagentWsEvent {
